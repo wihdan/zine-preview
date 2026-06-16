@@ -696,7 +696,7 @@ export default function App() {
       )}
 
       {/* RIGHT WORKSPACE */}
-      <main ref={previewContainerRef} className="flex-1 h-screen overflow-y-auto relative z-10">
+      <main ref={previewContainerRef} className="flex-1 h-screen overflow-y-auto relative z-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         
         {/* Upload Mode View */}
         {mode === 'upload' && (
