@@ -79,6 +79,11 @@ export default function App() {
   const dragStartRef = useRef(null);
   const isDraggingRef = useRef(false);
 
+  // --- State for Fullscreen Auto-Hide Bar ---
+  const [showFullscreenBar, setShowFullscreenBar] = useState(true);
+  const barTimeoutRef = useRef(null);
+  const isHoveringBarRef = useRef(false);
+
   // --- Upload Logic (Auto Detect & Split Landscape Pages) ---
   const handleFiles = async (fileList) => {
     setIsProcessing(true);
@@ -219,11 +224,66 @@ export default function App() {
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
-      if (!document.fullscreenElement) setShowExportMenu(false);
+      if (!document.fullscreenElement) {
+        setShowExportMenu(false);
+        setShowFullscreenBar(true); // Reset bar state saat keluar fullscreen
+      }
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  // --- Fullscreen Auto-Hide Bar Logic ---
+  const handleFullscreenActivity = (e) => {
+    if (!isFullscreenMode) return;
+
+    // Cegah bar muncul saat sedang men-drag/slide halaman
+    if (isDraggingRef.current) return;
+
+    // Cegah bar muncul saat menekan tombol panah keyboard
+    if (e && e.type === 'keydown' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      return;
+    }
+
+    setShowFullscreenBar(true);
+    if (barTimeoutRef.current) clearTimeout(barTimeoutRef.current);
+    
+    // Jangan sembunyikan bar jika mouse sedang berada tepat di atasnya
+    if (!isHoveringBarRef.current) {
+      barTimeoutRef.current = setTimeout(() => {
+        setShowFullscreenBar(false);
+        setShowExportMenu(false);
+      }, 2500); 
+    }
+  };
+
+  useEffect(() => {
+    if (isFullscreenMode) {
+      handleFullscreenActivity();
+      window.addEventListener('mousemove', handleFullscreenActivity);
+      window.addEventListener('touchstart', handleFullscreenActivity);
+      window.addEventListener('keydown', handleFullscreenActivity); 
+    } else {
+      if (barTimeoutRef.current) clearTimeout(barTimeoutRef.current);
+      setShowFullscreenBar(true);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleFullscreenActivity);
+      window.removeEventListener('touchstart', handleFullscreenActivity);
+      window.removeEventListener('keydown', handleFullscreenActivity);
+    };
+  }, [isFullscreenMode]);
+
+  const handleBarMouseEnter = () => {
+    isHoveringBarRef.current = true;
+    setShowFullscreenBar(true);
+    if (barTimeoutRef.current) clearTimeout(barTimeoutRef.current);
+  };
+
+  const handleBarMouseLeave = () => {
+    isHoveringBarRef.current = false;
+    handleFullscreenActivity();
+  };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -272,12 +332,33 @@ export default function App() {
     setShowExportMenu(false);
   };
 
+  // --- NEW: Keyboard Navigation for Flipping Pages ---
+  useEffect(() => {
+    const handleArrowKeys = (e) => {
+      if (mode === 'preview') {
+        if (e.key === 'ArrowRight') {
+          turnNext();
+          setShowFullscreenBar(false);
+          setShowExportMenu(false);
+        } else if (e.key === 'ArrowLeft') {
+          turnPrev();
+          setShowFullscreenBar(false);
+          setShowExportMenu(false);
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleArrowKeys);
+    return () => window.removeEventListener('keydown', handleArrowKeys);
+  }, [mode, currentSheet, sheets.length]);
+
   const handleDragDown = (e) => {
     const clientX = e.clientX || (e.touches && e.touches[0].clientX);
     if (!clientX) return;
     dragStartRef.current = clientX;
     isDraggingRef.current = true;
     setShowExportMenu(false);
+    setShowFullscreenBar(false); // Sembunyikan bar seketika saat mulai nge-slide
   };
 
   const handleDragMove = (e) => {
@@ -691,13 +772,27 @@ export default function App() {
         )}
 
         {/* Live Mockup Preview Mode */}
-        {mode === 'preview' && (
-          <div className={`w-full h-full flex flex-col relative transition-all duration-300 pointer-events-none ${isFullscreenMode ? 'fixed inset-0 z-[99999] h-screen' : ''}`}>
-            
-            {isFullscreenMode && (
+      {mode === 'preview' && (
+        <div className={`w-full h-full flex flex-col relative transition-all duration-300 pointer-events-none ${isFullscreenMode ? 'fixed inset-0 z-[99999] h-screen' : ''}`}>
+          
+          {isFullscreenMode && (
+            <div 
+              className="absolute bottom-0 left-0 w-full h-32 z-[999999] flex justify-center items-end pb-8 pointer-events-none"
+              style={{ transform: 'translateZ(10px)' }}
+            >
+              {/* Hotspot Hover-area transparan di bagian bawah layar */}
               <div 
-                className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-zinc-950/50 backdrop-blur-xl px-5 py-2.5 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[999999] border border-white/10 pointer-events-auto"
-                style={{ transform: 'translateZ(10px) translateX(-50%)' }}
+                className="absolute bottom-0 left-0 w-full h-full pointer-events-auto" 
+                onMouseEnter={handleBarMouseEnter} 
+                onMouseLeave={handleBarMouseLeave}
+                onClick={handleFullscreenActivity}
+              />
+              
+              <div 
+                className={`relative flex items-center gap-4 bg-zinc-950/50 backdrop-blur-xl px-5 py-2.5 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/10 pointer-events-auto transition-all duration-500 ease-out z-10 ${showFullscreenBar ? 'translate-y-0 opacity-100' : 'translate-y-16 opacity-0'}`}
+                onMouseEnter={handleBarMouseEnter}
+                onMouseLeave={handleBarMouseLeave}
+                onTouchStart={handleBarMouseEnter}
               >
                 <button onClick={turnPrev} disabled={currentSheet === 0} className="p-1.5 text-zinc-300 hover:text-white disabled:opacity-30 disabled:hover:text-zinc-300 hover:bg-white/5 rounded-full transition-all">
                   <ChevronLeft className="w-4 h-4 pointer-events-none" />
@@ -730,11 +825,12 @@ export default function App() {
                   <Minimize className="w-4 h-4 pointer-events-none" />
                 </button>
               </div>
-            )}
+            </div>
+          )}
 
-            <div 
-              className={`flex-1 w-full h-full flex items-center justify-center p-8 pb-16 relative z-10 pointer-events-none overflow-hidden select-none transition-all duration-300 ${isFullscreenMode ? (isDarkMode ? 'pt-8 bg-zinc-950' : 'pt-8 bg-zinc-50') : 'pt-24'}`}
-              onMouseDown={handleDragDown}
+          <div 
+            className={`flex-1 w-full h-full flex items-center justify-center p-8 pb-16 relative z-10 pointer-events-none overflow-hidden select-none transition-all duration-300 ${isFullscreenMode ? (isDarkMode ? 'pt-8 bg-zinc-950' : 'pt-8 bg-zinc-50') : 'pt-24'}`}
+            onMouseDown={handleDragDown}
               onMouseMove={handleDragMove}
               onMouseUp={handleDragEndAction}
               onMouseLeave={handleDragEndAction}
@@ -783,7 +879,7 @@ export default function App() {
 
             {!isFullscreenMode && (
               <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-zinc-400/50 text-[10px] tracking-widest uppercase z-30 pointer-events-none bg-black/40 border border-white/5 px-5 py-2 rounded-full backdrop-blur-sm whitespace-nowrap">
-                Drag layout spread to flip pages
+                Drag layout spread or use arrow keys to flip
               </div>
             )}
 
